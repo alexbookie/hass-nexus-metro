@@ -1,0 +1,13 @@
+{
+  "domain": "nexus_metro",
+  "name": "Nexus Metro",
+  "codeowners": [
+    "@alexbookie"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/alexbookie/hass-nexus-metro",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/alexbookie/hass-nexus-metro/issues",
+  "version": "0.1.0"
+}

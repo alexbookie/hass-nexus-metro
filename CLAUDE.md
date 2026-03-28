@@ -1,36 +1,53 @@
-# Claude Code Instructions
+# Integration: Nexus Metro
 
-This repository uses a shared AI agent instruction system. **All instructions are in [`AGENTS.md`](AGENTS.md).**
+## What This Does
+Integrates the Tyne and Wear Metro real-time departure information with Home Assistant.
+Exposes: sensors showing next train departures per platform at a configured station.
 
-Read `AGENTS.md` completely before starting any work. It contains:
+## API Details
+- Base URL: https://metro-rti.nexus.org.uk/api
+- Auth: None (requires User-Agent: `okhttp/3.12.1`)
+- Rate limits: Undocumented; upstream refreshes every ~2 minutes
+- Docs: https://github.com/danielgjackson/metro-rti (community reverse-engineered)
+- This is an unofficial API backing the Nexus Pop mobile app
 
-- Project overview and integration identifiers
-- Package structure and architectural rules
-- Code style, validation commands, and quality expectations
-- Home Assistant patterns (config flow, coordinator, entities, services)
-- Error recovery strategy and breaking change policy
-- Workflow rules (scope management, translations, documentation)
+### Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/stations` | `{code: name}` map of all 60 stations |
+| GET | `/stations/platforms` | `{code: [{platformNumber, direction, helperText}]}` |
+| GET | `/times/{STATION}/{PLATFORM}` | Array of next trains (up to ~4) |
+
+## Entities
+| Platform | Entity | Source |
+|----------|--------|--------|
+| sensor | Platform N next departure | GET /times/{station}/{platform} |
+
+Each sensor: state = minutes until next train, attributes include destination, line (GREEN/YELLOW),
+train number, last event, scheduled/predicted times, and full next_trains list.
+
+## Known Issues / Gotchas
+- Unofficial API — could require auth or change at any time
+- No timezone in timestamps — all times are UK local (Europe/London)
+- `dueIn` = -1 means train has arrived at platform
+- Empty array returned overnight when no service running
+- Service alerts require separate authenticated Azure API (out of scope)
+- `/stations` and `/stations/platforms` may return 401 without correct User-Agent
+
+## Current Status
+- [x] API client with typed models
+- [x] Config flow (station selection + platform filter)
+- [x] Options flow (polling interval)
+- [x] DataUpdateCoordinator
+- [x] Sensor platform (per-platform departure sensors)
+- [x] Tests (46 passing)
+- [ ] Diagnostics support
+- [ ] Reauth flow (if API starts requiring auth)
 
 ## Quick Reference
-
-- **Domain:** `ha_integration_domain`
-- **Title:** Integration Blueprint
-- **Class prefix:** `IntegrationBlueprint`
-- **Main code:** `custom_components/ha_integration_domain/`
-- **Validate:** `script/check` (type-check + lint + spell)
+- **Domain:** `nexus_metro`
+- **Class prefix:** `NexusMetro`
+- **Main code:** `custom_components/nexus_metro/`
+- **Validate:** `script/check`
 - **Test:** `script/test`
 - **Run HA:** `./script/develop`
-
-## Path-Specific Instructions
-
-Additional domain-specific guidance is available in `.github/instructions/*.instructions.md`.
-These files use `applyTo` globs to indicate which files they cover.
-Consult the relevant instruction file when working on specific file types:
-
-- `python.instructions.md` — Python style, async patterns, HA imports
-- `entities.instructions.md` — Entity platform patterns, inheritance
-- `config_flow.instructions.md` — Config flow, reauth, discovery
-- `coordinator.instructions.md` — DataUpdateCoordinator patterns
-- `api.instructions.md` — API client, exception hierarchy
-- `services_yaml.instructions.md` — Service action definitions
-- `translations.instructions.md` — Translation file structure
