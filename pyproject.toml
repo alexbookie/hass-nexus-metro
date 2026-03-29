@@ -6,15 +6,15 @@
 # - [tool.pylint.*] - Optional additional linting (Ruff is sufficient)
 
 [project]
-name = "ha_integration_domain"
+name = "nexus_metro"
 version = "0.0.0"   # Version is managed in manifest.json only
 requires-python = ">=3.13.2"
 
 [tool.setuptools]
-packages = ["custom_components.ha_integration_domain"]
+packages = ["custom_components.nexus_metro"]
 
 [tool.pyright]
-include = ["custom_components/ha_integration_domain"]
+include = ["custom_components/nexus_metro"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",
@@ -51,12 +51,12 @@ markers = [
 filterwarnings = [
     # Treat warnings as errors to catch issues early
     "error",
-    # Ignore specific warnings from third-party libraries as needed
-    # "ignore:.*custom_components.* is using deprecated.*:DeprecationWarning",
+    # aiohttp ClientSession deprecation from HA's aiohttp_client helper
+    "ignore:Setting custom ClientSession.*:DeprecationWarning",
 ]
 
 [tool.coverage.run]
-source = ["custom_components/ha_integration_domain"]
+source = ["custom_components/nexus_metro"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
@@ -276,6 +276,9 @@ split-on-trailing-comma = false
     "PLR2004", # Magic values are fine in tests
     "D",       # Docstrings not required in tests
     "PTH",     # Use pathlib - temporary exemption for tests
+    "TID251",  # Allow importing from tests package
+    "SLF001",  # Allow accessing private members (e.g. _async_update_data)
+    "PLC0415", # Allow non-top-level imports in test fixtures
 ]
 
 [tool.ruff.lint.mccabe]

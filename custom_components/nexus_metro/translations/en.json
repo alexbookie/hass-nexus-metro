@@ -1,0 +1,59 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select Metro Station",
+        "data": {
+          "station_code": "Station"
+        }
+      },
+      "platforms": {
+        "title": "Select Platforms at {station_name}",
+        "description": "Choose which platforms to monitor. Leave all selected to monitor the entire station.",
+        "data": {
+          "platforms": "Platforms"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Nexus Metro API",
+      "invalid_auth": "Authentication with the Nexus Metro API failed",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This station is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nexus Metro Options",
+        "data": {
+          "scan_interval": "Update interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to fetch departure data (60–300 seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_departure": {
+        "name": "Platform {platform_number} next departure"
+      },
+      "departure_2": {
+        "name": "Platform {platform_number} 2nd departure"
+      },
+      "departure_3": {
+        "name": "Platform {platform_number} 3rd departure"
+      },
+      "next_destination": {
+        "name": "Platform {platform_number} destination"
+      },
+      "next_line": {
+        "name": "Platform {platform_number} line"
+      }
+    }
+  }
+}
