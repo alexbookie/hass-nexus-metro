@@ -6,7 +6,7 @@ Exposes: sensors showing next train departures per platform at a configured stat
 
 ## API Details
 - Base URL: https://metro-rti.nexus.org.uk/api
-- Auth: None (requires User-Agent: `okhttp/3.12.1`)
+- Auth: Bearer JWT token scraped from web app (requires User-Agent: `okhttp/3.12.1`)
 - Rate limits: Undocumented; upstream refreshes every ~2 minutes
 - Docs: https://github.com/danielgjackson/metro-rti (community reverse-engineered)
 - This is an unofficial API backing the Nexus Pop mobile app
@@ -40,7 +40,7 @@ train number, last event, scheduled/predicted times, and full next_trains list.
 - [x] Options flow (polling interval)
 - [x] DataUpdateCoordinator
 - [x] Sensor platform (per-platform departure sensors)
-- [x] Tests (46 passing)
+- [x] Tests (82 passing)
 - [ ] Diagnostics support
 - [ ] Reauth flow (if API starts requiring auth)
 

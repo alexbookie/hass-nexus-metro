@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -42,6 +43,7 @@ class TrainDeparture:
     last_event_time: str
     scheduled_time: str | None
     predicted_time: str | None
+    departure_dt: datetime | None
 
 
 @dataclass(frozen=True, kw_only=True)

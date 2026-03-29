@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
+from .auth import NexusMetroAuthError
 from .models import MetroLine, PlatformDirection, PlatformInfo, TrainDeparture, TrainEvent
+
+if TYPE_CHECKING:
+    from .auth import NexusMetroTokenManager
 
 _LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://metro-rti.nexus.org.uk/api"
 USER_AGENT = "okhttp/3.12.1"
+
+_LONDON_TZ = ZoneInfo("Europe/London")
 
 
 class NexusMetroApiError(Exception):
@@ -25,6 +33,17 @@ class NexusMetroConnectionError(NexusMetroApiError):
 
 class NexusMetroResponseError(NexusMetroApiError):
     """Raised when the API returns an unexpected response."""
+
+
+def _parse_uk_timestamp(raw: str | None) -> datetime | None:
+    """Parse a naive UK local timestamp string into a timezone-aware datetime."""
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).replace(tzinfo=_LONDON_TZ)
+    except ValueError:
+        _LOGGER.warning("Could not parse timestamp: %r", raw)
+        return None
 
 
 def _parse_line(raw: str | None) -> MetroLine | None:
@@ -49,6 +68,9 @@ def _parse_event(raw: str) -> TrainEvent:
 
 def _parse_departure(data: dict[str, Any]) -> TrainDeparture:
     """Parse a single train departure from API JSON."""
+    departure_dt = _parse_uk_timestamp(data.get("actualPredictedTime")) or _parse_uk_timestamp(
+        data.get("actualScheduledTime")
+    )
     return TrainDeparture(
         train_number=str(data.get("trn", "")),
         destination=data.get("destination", "Unknown"),
@@ -59,6 +81,7 @@ def _parse_departure(data: dict[str, Any]) -> TrainDeparture:
         last_event_time=data.get("lastEventTime", ""),
         scheduled_time=data.get("actualScheduledTime"),
         predicted_time=data.get("actualPredictedTime"),
+        departure_dt=departure_dt,
     )
 
 
@@ -78,16 +101,37 @@ def _parse_platforms(raw: list[dict[str, Any]]) -> dict[int, PlatformInfo]:
 class NexusMetroApiClient:
     """Client for the Nexus Metro RTI API."""
 
-    def __init__(self, session: aiohttp.ClientSession) -> None:
-        """Initialise with an aiohttp session."""
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        token_manager: NexusMetroTokenManager | None = None,
+    ) -> None:
+        """Initialise with an aiohttp session and optional token manager."""
         self._session = session
+        self._token_manager = token_manager
 
     async def _get(self, path: str) -> Any:
         """Make a GET request to the API."""
         url = f"{BASE_URL}{path}"
-        headers = {"User-Agent": USER_AGENT}
+        headers: dict[str, str] = {"User-Agent": USER_AGENT}
+
+        if self._token_manager is not None:
+            token = await self._token_manager.async_get_token()
+            headers["Authorization"] = f"Bearer {token}"
+
         try:
             async with self._session.get(url, headers=headers) as resp:
+                if resp.status == 401 and self._token_manager is not None:
+                    # Token may have expired — invalidate and retry once
+                    self._token_manager.invalidate()
+                    new_token = await self._token_manager.async_get_token()
+                    headers["Authorization"] = f"Bearer {new_token}"
+                    async with self._session.get(url, headers=headers) as retry_resp:
+                        if retry_resp.status == 401:
+                            raise NexusMetroAuthError(f"API returned 401 for {path} after token refresh")
+                        if retry_resp.status != 200:
+                            raise NexusMetroResponseError(f"API returned HTTP {retry_resp.status} for {path}")
+                        return await retry_resp.json()
                 if resp.status == 401:
                     raise NexusMetroResponseError(
                         f"API returned 401 for {path} — the API may now require authentication"

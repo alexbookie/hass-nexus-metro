@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from custom_components.nexus_metro.api import NexusMetroApiClient
+from custom_components.nexus_metro.auth import NexusMetroTokenManager
 from custom_components.nexus_metro.const import CONF_PLATFORMS, CONF_STATION_CODE, CONF_STATION_NAME, DOMAIN
 from custom_components.nexus_metro.models import MetroLine, PlatformDirection, PlatformInfo, TrainDeparture, TrainEvent
 from homeassistant.core import HomeAssistant
@@ -66,6 +67,7 @@ SAMPLE_DEPARTURES_PARSED: list[TrainDeparture] = [
         last_event_time="2024-01-15T15:03:12",
         scheduled_time="2024-01-15T15:05:00",
         predicted_time="2024-01-15T15:06:30",
+        departure_dt=None,
     ),
     TrainDeparture(
         train_number="124",
@@ -77,6 +79,7 @@ SAMPLE_DEPARTURES_PARSED: list[TrainDeparture] = [
         last_event_time="2024-01-15T15:03:43",
         scheduled_time="2024-01-15T15:10:00",
         predicted_time="2024-01-15T15:11:00",
+        departure_dt=None,
     ),
 ]
 
@@ -97,6 +100,14 @@ SAMPLE_PLATFORMS_PARSED: dict[int, PlatformInfo] = {
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Enable custom integrations for all tests."""
+
+
+@pytest.fixture
+def mock_token_manager() -> AsyncMock:
+    """Create a mock token manager."""
+    manager = AsyncMock(spec=NexusMetroTokenManager)
+    manager.async_get_token.return_value = "mock-jwt-token"
+    return manager
 
 
 @pytest.fixture
@@ -147,6 +158,8 @@ def mock_nexus_api():
     with (
         patch("custom_components.nexus_metro.config_flow.NexusMetroApiClient") as mock_flow,
         patch("custom_components.nexus_metro.NexusMetroApiClient") as mock_init,
+        patch("custom_components.nexus_metro.config_flow.NexusMetroTokenManager"),
+        patch("custom_components.nexus_metro.NexusMetroTokenManager"),
         patch("custom_components.nexus_metro.async_get_clientsession"),
     ):
         client = AsyncMock(spec=NexusMetroApiClient)

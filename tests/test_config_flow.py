@@ -20,6 +20,7 @@ def mock_flow_client():
     """Patch the API client in the config flow module."""
     with (
         patch("custom_components.nexus_metro.config_flow.NexusMetroApiClient") as mock_cls,
+        patch("custom_components.nexus_metro.config_flow.NexusMetroTokenManager"),
         patch("custom_components.nexus_metro.config_flow.async_get_clientsession"),
     ):
         client = AsyncMock()
@@ -86,7 +87,7 @@ class TestPlatformsStep:
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_PLATFORMS: [1, 2]},
+            {CONF_PLATFORMS: ["1", "2"]},
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -103,7 +104,7 @@ class TestPlatformsStep:
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_PLATFORMS: [1]},
+            {CONF_PLATFORMS: ["1"]},
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -134,7 +135,7 @@ class TestPlatformsStep:
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_PLATFORMS: [1, 2]},
+            {CONF_PLATFORMS: ["1", "2"]},
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -146,7 +147,7 @@ class TestPlatformsStep:
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_PLATFORMS: [1, 2]},
+            {CONF_PLATFORMS: ["1", "2"]},
         )
         assert result["type"] is FlowResultType.ABORT
         assert result["reason"] == "already_configured"

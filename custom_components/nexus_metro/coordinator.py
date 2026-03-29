@@ -6,9 +6,11 @@ from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import NexusMetroApiClient, NexusMetroApiError, NexusMetroConnectionError
+from .auth import NexusMetroAuthError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 from .models import PlatformInfo, StationData, TrainDeparture
 
@@ -56,6 +58,8 @@ class NexusMetroCoordinator(DataUpdateCoordinator[StationData]):
                 departures[platform_number] = await self.client.async_get_departures(self.station_code, platform_number)
             except NexusMetroConnectionError as err:
                 raise UpdateFailed(f"Cannot connect to Nexus Metro API: {err}") from err
+            except NexusMetroAuthError as err:
+                raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
             except NexusMetroApiError as err:
                 _LOGGER.warning(
                     "Failed to fetch departures for %s platform %s: %s",

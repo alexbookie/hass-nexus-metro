@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from custom_components.nexus_metro.api import NexusMetroConnectionError, NexusMetroResponseError
+from custom_components.nexus_metro.auth import NexusMetroAuthError
 from custom_components.nexus_metro.coordinator import NexusMetroCoordinator
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .conftest import SAMPLE_DEPARTURES_PARSED, SAMPLE_PLATFORMS_PARSED
@@ -76,6 +78,14 @@ class TestCoordinatorUpdate:
 
         assert data.departures[1] == []
         assert len(data.departures[2]) == 2
+
+    async def test_auth_error_raises_config_entry_auth_failed(self, hass: HomeAssistant, mock_api_client: AsyncMock):
+        mock_api_client.async_get_departures.side_effect = NexusMetroAuthError("token expired")
+
+        coordinator = _make_coordinator(hass, mock_api_client)
+
+        with pytest.raises(ConfigEntryAuthFailed, match="Authentication failed"):
+            await coordinator._async_update_data()
 
     async def test_platforms_in_data(self, hass: HomeAssistant, mock_api_client: AsyncMock):
         coordinator = _make_coordinator(hass, mock_api_client)

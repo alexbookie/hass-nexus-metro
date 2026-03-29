@@ -8,6 +8,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import NexusMetroApiClient, NexusMetroConnectionError
+from .auth import NexusMetroAuthError, NexusMetroTokenManager
 from .const import (
     CONF_PLATFORMS,
     CONF_SCAN_INTERVAL,
@@ -28,7 +29,8 @@ if TYPE_CHECKING:
 async def async_setup_entry(hass: HomeAssistant, entry: NexusMetroConfigEntry) -> bool:
     """Set up Nexus Metro from a config entry."""
     session = async_get_clientsession(hass)
-    client = NexusMetroApiClient(session=session)
+    token_manager = NexusMetroTokenManager(session=session)
+    client = NexusMetroApiClient(session=session, token_manager=token_manager)
 
     station_code: str = entry.data[CONF_STATION_CODE]
     station_name: str = entry.data[CONF_STATION_NAME]
@@ -40,6 +42,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NexusMetroConfigEntry) -
         platforms = await client.async_get_platforms(station_code)
     except NexusMetroConnectionError as err:
         raise ConfigEntryNotReady(f"Could not connect to Nexus Metro API: {err}") from err
+    except NexusMetroAuthError as err:
+        raise ConfigEntryNotReady(f"Authentication failed: {err}") from err
     except Exception as err:
         raise ConfigEntryNotReady(f"Error fetching platform data: {err}") from err
 
@@ -63,7 +67,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NexusMetroConfigEntry) -
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    entry.async_on_unload(entry.add_update_listener(_async_update_options))
+
     return True
+
+
+async def _async_update_options(hass: HomeAssistant, entry: NexusMetroConfigEntry) -> None:
+    """Reload the integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NexusMetroConfigEntry) -> bool:

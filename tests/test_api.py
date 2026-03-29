@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
@@ -15,10 +17,14 @@ from custom_components.nexus_metro.api import (
     _parse_event,
     _parse_line,
     _parse_platforms,
+    _parse_uk_timestamp,
 )
+from custom_components.nexus_metro.auth import NexusMetroAuthError
 from custom_components.nexus_metro.models import MetroLine, PlatformDirection, TrainEvent
 
-from .conftest import SAMPLE_DEPARTURES_PARSED, SAMPLE_DEPARTURES_RAW, SAMPLE_PLATFORMS_RAW, SAMPLE_STATIONS
+from .conftest import SAMPLE_DEPARTURES_RAW, SAMPLE_PLATFORMS_RAW, SAMPLE_STATIONS
+
+_LONDON_TZ = ZoneInfo("Europe/London")
 
 # --- Helper / parser unit tests ---
 
@@ -48,10 +54,47 @@ class TestParseEvent:
         assert _parse_event("UNKNOWN_STATE") == TrainEvent.DEPARTED
 
 
+class TestParseUkTimestamp:
+    def test_parses_valid_timestamp(self):
+        result = _parse_uk_timestamp("2024-01-15T15:06:30")
+        assert result == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
+
+    def test_none_returns_none(self):
+        assert _parse_uk_timestamp(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert _parse_uk_timestamp("") is None
+
+    def test_malformed_returns_none(self):
+        assert _parse_uk_timestamp("not-a-date") is None
+
+
 class TestParseDeparture:
     def test_full_data(self):
         result = _parse_departure(SAMPLE_DEPARTURES_RAW[0])
-        assert result == SAMPLE_DEPARTURES_PARSED[0]
+        assert result.train_number == "102"
+        assert result.destination == "South Hylton"
+        assert result.due_in == 3
+        assert result.line == MetroLine.GREEN
+        assert result.scheduled_time == "2024-01-15T15:05:00"
+        assert result.predicted_time == "2024-01-15T15:06:30"
+        # departure_dt derived from predicted_time (takes priority over scheduled)
+        assert result.departure_dt == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
+
+    def test_no_predicted_falls_back_to_scheduled(self):
+        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": None}
+        result = _parse_departure(raw)
+        assert result.departure_dt == datetime(2024, 1, 15, 15, 5, 0, tzinfo=_LONDON_TZ)
+
+    def test_both_times_none_gives_none_dt(self):
+        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": None, "actualScheduledTime": None}
+        result = _parse_departure(raw)
+        assert result.departure_dt is None
+
+    def test_malformed_timestamp_gives_none_dt(self):
+        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": "not-a-date", "actualScheduledTime": None}
+        result = _parse_departure(raw)
+        assert result.departure_dt is None
 
     def test_minimal_data(self):
         result = _parse_departure({"lastEvent": "ARRIVED"})
@@ -62,6 +105,7 @@ class TestParseDeparture:
         assert result.last_event == TrainEvent.ARRIVED
         assert result.scheduled_time is None
         assert result.predicted_time is None
+        assert result.departure_dt is None
 
     def test_arrived_negative_due_in(self):
         raw = {**SAMPLE_DEPARTURES_RAW[0], "dueIn": -1, "lastEvent": "ARRIVED"}
@@ -172,8 +216,12 @@ class TestGetDepartures:
         result = await api_client.async_get_departures("JES", 1)
 
         assert len(result) == 2
-        assert result[0] == SAMPLE_DEPARTURES_PARSED[0]
-        assert result[1] == SAMPLE_DEPARTURES_PARSED[1]
+        assert result[0].train_number == "102"
+        assert result[0].destination == "South Hylton"
+        assert result[0].due_in == 3
+        assert result[0].departure_dt == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
+        assert result[1].train_number == "124"
+        assert result[1].departure_dt == datetime(2024, 1, 15, 15, 11, 0, tzinfo=_LONDON_TZ)
 
     async def test_empty_response_overnight(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
         mock_session.get.return_value = _mock_response(json_data=[])
@@ -217,3 +265,56 @@ class TestTestConnection:
 
         with pytest.raises(NexusMetroConnectionError):
             await api_client.async_test_connection()
+
+
+# --- Token-aware API client tests ---
+
+
+class TestGetWithTokenManager:
+    async def test_token_added_to_headers(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
+        mock_session.get.return_value = _mock_response(json_data=SAMPLE_STATIONS)
+        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
+
+        await client.async_get_stations()
+
+        call_kwargs = mock_session.get.call_args.kwargs
+        assert call_kwargs["headers"]["Authorization"] == "Bearer mock-jwt-token"
+
+    async def test_401_triggers_retry_with_fresh_token(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
+        mock_session.get.side_effect = [
+            _mock_response(status=401),
+            _mock_response(json_data=SAMPLE_STATIONS),
+        ]
+        mock_token_manager.async_get_token.side_effect = [
+            "first-token",
+            "refreshed-token",
+        ]
+        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
+
+        result = await client.async_get_stations()
+
+        assert result == SAMPLE_STATIONS
+        mock_token_manager.invalidate.assert_called_once()
+        assert mock_token_manager.async_get_token.call_count == 2
+
+    async def test_401_retry_also_fails_raises_auth_error(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
+        mock_session.get.side_effect = [
+            _mock_response(status=401),
+            _mock_response(status=401),
+        ]
+        mock_token_manager.async_get_token.side_effect = [
+            "first-token",
+            "refreshed-token",
+        ]
+        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
+
+        with pytest.raises(NexusMetroAuthError, match="401.*after token refresh"):
+            await client.async_get_stations()
+
+    async def test_no_token_manager_401_raises_response_error(self, mock_session: AsyncMock):
+        """Existing behavior: client without token manager raises ResponseError on 401."""
+        mock_session.get.return_value = _mock_response(status=401)
+        client = NexusMetroApiClient(session=mock_session)
+
+        with pytest.raises(NexusMetroResponseError, match="401"):
+            await client.async_get_stations()
