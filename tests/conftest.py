@@ -146,7 +146,7 @@ def mock_config_entry(hass: HomeAssistant):
             CONF_STATION_NAME: "Jesmond",
             CONF_PLATFORMS: [1, 2],
         },
-        unique_id="JES_1_2",
+        unique_id="JES",
     )
     entry.add_to_hass(hass)
     return entry

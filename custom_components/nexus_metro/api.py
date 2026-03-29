@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from .auth import NexusMetroAuthError
 from .models import MetroLine, PlatformDirection, PlatformInfo, TrainDeparture, TrainEvent
 
 if TYPE_CHECKING:
@@ -25,6 +24,10 @@ _LONDON_TZ = ZoneInfo("Europe/London")
 
 class NexusMetroApiError(Exception):
     """Base exception for Nexus Metro API errors."""
+
+
+class NexusMetroAuthError(NexusMetroApiError):
+    """Raised when token acquisition or authentication fails."""
 
 
 class NexusMetroConnectionError(NexusMetroApiError):

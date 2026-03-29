@@ -288,8 +288,8 @@ class TestNativeValueCountdown:
         with patch("custom_components.nexus_metro.sensor.dt_util.utcnow", return_value=now):
             assert sensor.native_value == 0
 
-    def test_preserves_arrived_sentinel(self, mock_config_entry, mock_nexus_api):
-        """due_in=-1 always returns -1 regardless of departure_dt."""
+    def test_arrived_train_returns_zero(self, mock_config_entry, mock_nexus_api):
+        """due_in=-1 (train arrived) returns 0 minutes."""
         from unittest.mock import MagicMock
 
         coordinator = MagicMock()
@@ -310,7 +310,7 @@ class TestNativeValueCountdown:
         coordinator.data.departures = {1: [dep]}
 
         with patch("custom_components.nexus_metro.sensor.dt_util.utcnow", return_value=now):
-            assert sensor.native_value == -1
+            assert sensor.native_value == 0
 
     def test_falls_back_to_raw_due_in_when_no_dt(self, mock_config_entry, mock_nexus_api):
         """departure_dt=None falls back to raw due_in integer."""

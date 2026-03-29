@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import NexusMetroApiClient, NexusMetroConnectionError
-from .auth import NexusMetroAuthError, NexusMetroTokenManager
+from .api import NexusMetroApiClient, NexusMetroAuthError, NexusMetroConnectionError
+from .auth import NexusMetroTokenManager
 from .const import (
     CONF_PLATFORMS,
     CONF_SCAN_INTERVAL,
@@ -43,7 +43,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NexusMetroConfigEntry) -
     except NexusMetroConnectionError as err:
         raise ConfigEntryNotReady(f"Could not connect to Nexus Metro API: {err}") from err
     except NexusMetroAuthError as err:
-        raise ConfigEntryNotReady(f"Authentication failed: {err}") from err
+        raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
     except Exception as err:
         raise ConfigEntryNotReady(f"Error fetching platform data: {err}") from err
 
