@@ -15,6 +15,8 @@ import time
 
 import aiohttp
 
+from .api import NexusMetroAuthError
+
 _LOGGER = logging.getLogger(__name__)
 
 TOKEN_URL = "https://metro-rti-app.nexus.org.uk/"
@@ -23,10 +25,6 @@ USER_AGENT = "okhttp/3.12.1"
 
 # Matches "token":"<jwt>" inside the window.form_data JSON object
 _TOKEN_PATTERN = re.compile(r'"token"\s*:\s*"([^"]+)"')
-
-
-class NexusMetroAuthError(Exception):
-    """Raised when token acquisition or authentication fails."""
 
 
 def _decode_jwt_exp(token: str) -> float:

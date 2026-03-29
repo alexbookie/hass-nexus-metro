@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import NexusMetroApiClient, NexusMetroApiError, NexusMetroConnectionError
-from .auth import NexusMetroAuthError
+from .api import NexusMetroApiClient, NexusMetroApiError, NexusMetroAuthError, NexusMetroConnectionError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 from .models import PlatformInfo, StationData, TrainDeparture
 

@@ -7,13 +7,13 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import NexusMetroApiClient, NexusMetroApiError, NexusMetroConnectionError
-from .auth import NexusMetroAuthError, NexusMetroTokenManager
+from .api import NexusMetroApiClient, NexusMetroApiError, NexusMetroAuthError, NexusMetroConnectionError
+from .auth import NexusMetroTokenManager
 from .const import (
     CONF_PLATFORMS,
     CONF_SCAN_INTERVAL,
@@ -121,9 +121,7 @@ class NexusMetroConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             selected = [int(p) for p in user_input.get(CONF_PLATFORMS, [])]
 
-            await self.async_set_unique_id(
-                f"{self._selected_station_code}_{'_'.join(str(p) for p in sorted(selected)) if selected else 'all'}"
-            )
+            await self.async_set_unique_id(self._selected_station_code)
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
@@ -156,7 +154,7 @@ class NexusMetroConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigFlow,
+        config_entry: ConfigEntry,
     ) -> NexusMetroOptionsFlow:
         """Get the options flow handler."""
         return NexusMetroOptionsFlow()

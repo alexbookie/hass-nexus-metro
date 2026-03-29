@@ -120,7 +120,7 @@ class NexusMetroDepartureSensor(_NexusMetroPlatformEntity):
         if dep is None:
             return None
         if dep.due_in == -1:
-            return -1
+            return 0
         if dep.departure_dt is not None:
             delta = (dep.departure_dt - dt_util.utcnow()).total_seconds()
             return max(0, int(delta // 60))
