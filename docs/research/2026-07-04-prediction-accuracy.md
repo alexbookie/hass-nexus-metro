@@ -91,9 +91,35 @@ train's ID stays visible in attributes.*
    implausibly-early live ETAs fall back to schedule; "Early" status removed
 4. Tests updated/added (66 passing)
 
-## Tools (scratchpad, reusable)
+## Out-of-sample validation (afternoon run, six stations)
+
+A second run (~13:30–16:10 BST, same day) tested the **calibrated model live**
+across six stations spanning every network section — West Jesmond, Monkseaton,
+Haymarket, Gateshead, Four Lane Ends, Jarrow — four of which contributed no
+calibration data. **1,802 displayed predictions scored.**
+
+| Metric | Calibrated (displayed value) | Timetable (same rows) |
+|---|---|---|
+| MAE | **1.24 min** | 1.29 min |
+| Bias | **−0.02 min** | +0.68 min |
+| ≤2 min | 86% | 93% |
+
+- **The dwell calibration generalises**: bias is within ±0.5 min in every
+  lead-time bucket (previously it grew to +2.8 min for distant trains).
+- **Trains ≤10 min out — the ones that matter for "when do I leave" — score
+  MAE ~0.8 min, ~97% within 2 min.**
+- **The distrust fallback works as designed**: the 207 matched-but-implausibly
+  -early rows that fell back to the timetable scored MAE 0.88 min, 96% within
+  2 min — far better than the ~3.3 min error of trusting those live ETAs.
+- Per-station MAE 0.96–1.37 min everywhere except **Jarrow (2.19 min, p90
+  6.4)** — the South Shields branch was disrupted by today's short-turn
+  workings, so treat that residual as works-related until a normal-service
+  re-run says otherwise.
+
+## Tools (also in this directory, reusable)
 
 `accuracy_collector.py` (chunked collector), `accuracy_analyzer.py`
 (prediction-vs-arrival scoring), `replay_calibrate.py` (offline model sweeps
-over logged snapshots). Worth re-running for a weekday sample before the next
-release.
+over logged snapshots), `afternoon_report.py` (displayed-value scoring).
+Worth re-running for a weekday sample before the next release, with a look at
+Jarrow under normal service.
