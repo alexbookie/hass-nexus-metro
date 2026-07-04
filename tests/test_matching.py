@@ -76,12 +76,13 @@ class TestEstimateTrainEta:
         # Train departed Regent Centre heading to South Hylton.
         # Target: Jesmond (RGC -> SGF -> ILF -> WJS -> JES)
         # Segment times: RGC->SGF=4, SGF->ILF=1, ILF->WJS=2, WJS->JES=2 = 9 mins
-        # Departed adjustment: -0.5 * first_seg(4) = -2 => 7 mins
+        # Dwell: 3 intermediate stops * 0.2 = 0.6 => 9.6
+        # Departed adjustment: -0.5 * first_seg(4) = -2 => 7.6 mins
         train = _train(station="RGC", event=TrainEvent.DEPARTED, event_mins=900.0)
         eta = estimate_train_eta(train, "JES", now_mins=900.0)
 
         assert eta is not None
-        assert eta == pytest.approx(7.0, abs=0.1)
+        assert eta == pytest.approx(7.6, abs=0.1)
 
     def test_approaching_reduces_eta(self):
         train = _train(station="RGC", event=TrainEvent.APPROACHING, event_mins=900.0)
@@ -97,7 +98,7 @@ class TestEstimateTrainEta:
         eta = estimate_train_eta(train, "JES", now_mins=902.0)
 
         assert eta is not None
-        assert eta == pytest.approx(5.0, abs=0.1)
+        assert eta == pytest.approx(5.6, abs=0.1)
 
     def test_target_behind_train_returns_none(self):
         # Train at JES heading to South Hylton, target is RGC (behind)

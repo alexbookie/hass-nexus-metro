@@ -48,7 +48,7 @@ class CombinedDeparture:
     scheduled_due: str
     scheduled_mins: float | None
     live_estimate_mins: float | None
-    status: str  # "On time", "Delayed (~Xm)", "Early (~Xm)", "Scheduled"
+    status: str  # "On time", "Delayed (~Xm)", "Scheduled"
     train_id: str
     train_info: str
 
