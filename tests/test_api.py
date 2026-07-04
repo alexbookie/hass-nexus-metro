@@ -1,320 +1,159 @@
-"""Tests for the Nexus Metro API client."""
+"""Tests for the Traveline and KML API clients."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import AsyncMock
-from zoneinfo import ZoneInfo
-
-import aiohttp
 import pytest
 
-from custom_components.nexus_metro.api import (
-    NexusMetroApiClient,
-    NexusMetroConnectionError,
-    NexusMetroResponseError,
-    _parse_departure,
-    _parse_event,
-    _parse_line,
-    _parse_platforms,
-    _parse_uk_timestamp,
-)
-from custom_components.nexus_metro.auth import NexusMetroAuthError
-from custom_components.nexus_metro.models import MetroLine, PlatformDirection, TrainEvent
-
-from .conftest import SAMPLE_DEPARTURES_RAW, SAMPLE_PLATFORMS_RAW, SAMPLE_STATIONS
-
-_LONDON_TZ = ZoneInfo("Europe/London")
-
-# --- Helper / parser unit tests ---
-
-
-class TestParseLine:
-    def test_green(self):
-        assert _parse_line("GREEN") == MetroLine.GREEN
-
-    def test_yellow(self):
-        assert _parse_line("YELLOW") == MetroLine.YELLOW
-
-    def test_none(self):
-        assert _parse_line(None) is None
-
-    def test_unknown_returns_none(self):
-        assert _parse_line("PURPLE") is None
-
-
-class TestParseEvent:
-    def test_all_known_events(self):
-        assert _parse_event("ARRIVED") == TrainEvent.ARRIVED
-        assert _parse_event("DEPARTED") == TrainEvent.DEPARTED
-        assert _parse_event("APPROACHING") == TrainEvent.APPROACHING
-        assert _parse_event("READY_TO_START") == TrainEvent.READY_TO_START
-
-    def test_unknown_defaults_to_departed(self):
-        assert _parse_event("UNKNOWN_STATE") == TrainEvent.DEPARTED
-
-
-class TestParseUkTimestamp:
-    def test_parses_valid_timestamp(self):
-        result = _parse_uk_timestamp("2024-01-15T15:06:30")
-        assert result == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
-
-    def test_none_returns_none(self):
-        assert _parse_uk_timestamp(None) is None
-
-    def test_empty_string_returns_none(self):
-        assert _parse_uk_timestamp("") is None
-
-    def test_malformed_returns_none(self):
-        assert _parse_uk_timestamp("not-a-date") is None
-
-
-class TestParseDeparture:
-    def test_full_data(self):
-        result = _parse_departure(SAMPLE_DEPARTURES_RAW[0])
-        assert result.train_number == "102"
-        assert result.destination == "South Hylton"
-        assert result.due_in == 3
-        assert result.line == MetroLine.GREEN
-        assert result.scheduled_time == "2024-01-15T15:05:00"
-        assert result.predicted_time == "2024-01-15T15:06:30"
-        # departure_dt derived from predicted_time (takes priority over scheduled)
-        assert result.departure_dt == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
-
-    def test_no_predicted_falls_back_to_scheduled(self):
-        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": None}
-        result = _parse_departure(raw)
-        assert result.departure_dt == datetime(2024, 1, 15, 15, 5, 0, tzinfo=_LONDON_TZ)
-
-    def test_both_times_none_gives_none_dt(self):
-        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": None, "actualScheduledTime": None}
-        result = _parse_departure(raw)
-        assert result.departure_dt is None
-
-    def test_malformed_timestamp_gives_none_dt(self):
-        raw = {**SAMPLE_DEPARTURES_RAW[0], "actualPredictedTime": "not-a-date", "actualScheduledTime": None}
-        result = _parse_departure(raw)
-        assert result.departure_dt is None
-
-    def test_minimal_data(self):
-        result = _parse_departure({"lastEvent": "ARRIVED"})
-        assert result.train_number == ""
-        assert result.destination == "Unknown"
-        assert result.due_in == -1
-        assert result.line is None
-        assert result.last_event == TrainEvent.ARRIVED
-        assert result.scheduled_time is None
-        assert result.predicted_time is None
-        assert result.departure_dt is None
-
-    def test_arrived_negative_due_in(self):
-        raw = {**SAMPLE_DEPARTURES_RAW[0], "dueIn": -1, "lastEvent": "ARRIVED"}
-        result = _parse_departure(raw)
-        assert result.due_in == -1
-        assert result.last_event == TrainEvent.ARRIVED
-
-
-class TestParsePlatforms:
-    def test_standard_two_platforms(self):
-        result = _parse_platforms(SAMPLE_PLATFORMS_RAW["JES"])
-        assert len(result) == 2
-        assert result[1].direction == PlatformDirection.IN
-        assert result[2].direction == PlatformDirection.OUT
-        assert result[1].helper_text == "To South Hylton and South Shields"
-
-    def test_empty_list(self):
-        result = _parse_platforms([])
-        assert result == {}
-
-
-# --- API client tests ---
-
-
-def _mock_response(status: int = 200, json_data: object = None) -> AsyncMock:
-    """Create a mock aiohttp response as an async context manager."""
-    resp = AsyncMock()
-    resp.status = status
-    resp.json = AsyncMock(return_value=json_data)
-
-    ctx = AsyncMock()
-    ctx.__aenter__ = AsyncMock(return_value=resp)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    return ctx
-
-
-class TestGetStations:
-    async def test_success(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_STATIONS)
-
-        result = await api_client.async_get_stations()
-
-        assert result == SAMPLE_STATIONS
-        mock_session.get.assert_called_once()
-        call_args = mock_session.get.call_args
-        assert "/stations" in call_args.args[0]
-        assert call_args.kwargs["headers"]["User-Agent"] == "okhttp/3.12.1"
-
-    async def test_non_dict_response(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=["not", "a", "dict"])
-
-        with pytest.raises(NexusMetroResponseError, match="Expected dict"):
-            await api_client.async_get_stations()
-
-    async def test_401_response(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(status=401)
-
-        with pytest.raises(NexusMetroResponseError, match="401"):
-            await api_client.async_get_stations()
-
-    async def test_500_response(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(status=500)
-
-        with pytest.raises(NexusMetroResponseError, match="500"):
-            await api_client.async_get_stations()
-
-    async def test_connection_error(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.side_effect = aiohttp.ClientError("Connection refused")
-
-        with pytest.raises(NexusMetroConnectionError, match="Failed to connect"):
-            await api_client.async_get_stations()
-
-
-class TestGetPlatforms:
-    async def test_success(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_PLATFORMS_RAW)
-
-        result = await api_client.async_get_platforms("JES")
-
-        assert len(result) == 2
-        assert result[1].direction == PlatformDirection.IN
-        assert result[2].direction == PlatformDirection.OUT
-
-    async def test_case_insensitive_station_code(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_PLATFORMS_RAW)
-
-        result = await api_client.async_get_platforms("jes")
-
-        assert len(result) == 2
-
-    async def test_unknown_station(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_PLATFORMS_RAW)
-
-        with pytest.raises(NexusMetroResponseError, match="No platform data found"):
-            await api_client.async_get_platforms("ZZZ")
-
-    async def test_non_dict_response(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data="not a dict")
-
-        with pytest.raises(NexusMetroResponseError, match="Expected dict"):
-            await api_client.async_get_platforms("JES")
-
-
-class TestGetDepartures:
-    async def test_success(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_DEPARTURES_RAW)
-
-        result = await api_client.async_get_departures("JES", 1)
-
-        assert len(result) == 2
-        assert result[0].train_number == "102"
-        assert result[0].destination == "South Hylton"
-        assert result[0].due_in == 3
-        assert result[0].departure_dt == datetime(2024, 1, 15, 15, 6, 30, tzinfo=_LONDON_TZ)
-        assert result[1].train_number == "124"
-        assert result[1].departure_dt == datetime(2024, 1, 15, 15, 11, 0, tzinfo=_LONDON_TZ)
-
-    async def test_empty_response_overnight(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=[])
-
-        result = await api_client.async_get_departures("JES", 1)
-
-        assert result == []
-
-    async def test_case_insensitive_station_code(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=[])
-
-        await api_client.async_get_departures("jes", 1)
-
-        call_url = mock_session.get.call_args.args[0]
-        assert "/times/JES/1" in call_url
-
-    async def test_non_list_response(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data={"error": "bad"})
-
-        with pytest.raises(NexusMetroResponseError, match="Expected list"):
-            await api_client.async_get_departures("JES", 1)
-
-
-class TestTestConnection:
-    async def test_success(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_STATIONS)
-
-        result = await api_client.async_test_connection()
-
-        assert result is True
-
-    async def test_empty_stations(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.return_value = _mock_response(json_data={})
-
-        result = await api_client.async_test_connection()
-
-        assert result is False
-
-    async def test_connection_failure_propagates(self, mock_session: AsyncMock, api_client: NexusMetroApiClient):
-        mock_session.get.side_effect = aiohttp.ClientError("timeout")
-
-        with pytest.raises(NexusMetroConnectionError):
-            await api_client.async_test_connection()
-
-
-# --- Token-aware API client tests ---
-
-
-class TestGetWithTokenManager:
-    async def test_token_added_to_headers(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
-        mock_session.get.return_value = _mock_response(json_data=SAMPLE_STATIONS)
-        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
-
-        await client.async_get_stations()
-
-        call_kwargs = mock_session.get.call_args.kwargs
-        assert call_kwargs["headers"]["Authorization"] == "Bearer mock-jwt-token"
-
-    async def test_401_triggers_retry_with_fresh_token(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
-        mock_session.get.side_effect = [
-            _mock_response(status=401),
-            _mock_response(json_data=SAMPLE_STATIONS),
-        ]
-        mock_token_manager.async_get_token.side_effect = [
-            "first-token",
-            "refreshed-token",
-        ]
-        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
-
-        result = await client.async_get_stations()
-
-        assert result == SAMPLE_STATIONS
-        mock_token_manager.invalidate.assert_called_once()
-        assert mock_token_manager.async_get_token.call_count == 2
-
-    async def test_401_retry_also_fails_raises_auth_error(self, mock_session: AsyncMock, mock_token_manager: AsyncMock):
-        mock_session.get.side_effect = [
-            _mock_response(status=401),
-            _mock_response(status=401),
-        ]
-        mock_token_manager.async_get_token.side_effect = [
-            "first-token",
-            "refreshed-token",
-        ]
-        client = NexusMetroApiClient(session=mock_session, token_manager=mock_token_manager)
-
-        with pytest.raises(NexusMetroAuthError, match="401.*after token refresh"):
-            await client.async_get_stations()
-
-    async def test_no_token_manager_401_raises_response_error(self, mock_session: AsyncMock):
-        """Existing behavior: client without token manager raises ResponseError on 401."""
-        mock_session.get.return_value = _mock_response(status=401)
-        client = NexusMetroApiClient(session=mock_session)
-
-        with pytest.raises(NexusMetroResponseError, match="401"):
-            await client.async_get_stations()
+from custom_components.nexus_metro.api import _parse_kml, _parse_traveline_html
+from custom_components.nexus_metro.models import TrainEvent
+
+
+class TestTravelineParsing:
+    def test_parse_departures_with_minutes(self):
+        html = (
+            '<span class="sr-only">Service - G. Destination - South Hylton. '
+            "Departure time - 3 mins.</span>"
+            '<span class="sr-only">Service - Y. Destination - South Shields. '
+            "Departure time - 8 mins.</span>"
+        )
+        deps = _parse_traveline_html(html)
+
+        assert len(deps) == 2
+        assert deps[0].service == "G"
+        assert deps[0].destination == "South Hylton"
+        assert deps[0].due == "3 mins"
+        assert deps[0].scheduled_mins == 3.0
+        assert deps[1].scheduled_mins == 8.0
+
+    def test_parse_due_now(self):
+        html = '<span class="sr-only">Service - G. Destination - Airport. Departure time - Due.</span>'
+        deps = _parse_traveline_html(html)
+
+        assert len(deps) == 1
+        assert deps[0].due == "Due"
+        assert deps[0].scheduled_mins == 0.0
+
+    def test_parse_absolute_time(self):
+        html = '<span class="sr-only">Service - Y. Destination - St James. Departure time - 22:41.</span>'
+        deps = _parse_traveline_html(html)
+
+        assert len(deps) == 1
+        assert deps[0].due == "22:41"
+        assert deps[0].scheduled_mins is None
+
+    def test_parse_empty_html(self):
+        assert _parse_traveline_html("") == []
+        assert _parse_traveline_html("<div>No departures</div>") == []
+
+
+class TestKmlParsing:
+    SAMPLE_KML = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<Placemark id="102">
+  <Point><coordinates>-1.62,54.98,0</coordinates></Point>
+  <ExtendedData>
+    <Data name="details">
+      <value><![CDATA[
+        <table>
+          <tr><td data-title="Last seen">Departed Regent Centre platform 1 at 15:03</td></tr>
+          <tr><td data-title="Destination">South Hylton</td></tr>
+        </table>
+      ]]></value>
+    </Data>
+  </ExtendedData>
+</Placemark>
+<Placemark id="200">
+  <Point><coordinates>-1.55,55.01,0</coordinates></Point>
+  <ExtendedData>
+    <Data name="details">
+      <value><![CDATA[
+        <table>
+          <tr><td data-title="Last seen">Ready to start Airport platform 2 at 14:50</td></tr>
+          <tr><td data-title="Destination">South Hylton</td></tr>
+        </table>
+      ]]></value>
+    </Data>
+  </ExtendedData>
+</Placemark>
+</Document>
+</kml>"""
+
+    def test_parse_departed_train(self):
+        trains = _parse_kml(self.SAMPLE_KML)
+
+        assert len(trains) == 2
+        t = trains[0]
+        assert t.train_id == "102"
+        assert t.event == TrainEvent.DEPARTED
+        assert t.event_station_code == "RGC"
+        assert t.event_platform == 1
+        assert t.event_time_mins == 15 * 60 + 3
+        assert t.destination == "South Hylton"
+        assert t.lat == pytest.approx(54.98)
+        assert t.lon == pytest.approx(-1.62)
+
+    def test_parse_ready_train(self):
+        trains = _parse_kml(self.SAMPLE_KML)
+
+        ready = trains[1]
+        assert ready.train_id == "200"
+        assert ready.event == TrainEvent.READY
+        assert ready.event_station_code == "APT"
+        assert ready.event_platform == 2
+
+    def test_parse_approaching_train(self):
+        kml = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<Placemark id="150">
+  <Point><coordinates>-1.60,54.99,0</coordinates></Point>
+  <ExtendedData>
+    <Data name="details">
+      <value><![CDATA[
+        <table>
+          <tr><td data-title="Last seen">Approaching Jesmond platform 1 at 10:15</td></tr>
+          <tr><td data-title="Destination">South Shields</td></tr>
+        </table>
+      ]]></value>
+    </Data>
+  </ExtendedData>
+</Placemark>
+</Document>
+</kml>"""
+        trains = _parse_kml(kml)
+
+        assert len(trains) == 1
+        assert trains[0].event == TrainEvent.APPROACHING
+        assert trains[0].event_station_code == "JES"
+
+    def test_parse_empty_kml(self):
+        kml = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document></Document>
+</kml>"""
+        assert _parse_kml(kml) == []
+
+    def test_parse_invalid_xml(self):
+        assert _parse_kml("not xml at all") == []
+
+    def test_unknown_station_skipped(self):
+        kml = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<Placemark id="999">
+  <Point><coordinates>-1.60,54.99,0</coordinates></Point>
+  <ExtendedData>
+    <Data name="details">
+      <value><![CDATA[
+        <table>
+          <tr><td data-title="Last seen">Departed Narnia platform 1 at 12:00</td></tr>
+          <tr><td data-title="Destination">Airport</td></tr>
+        </table>
+      ]]></value>
+    </Data>
+  </ExtendedData>
+</Placemark>
+</Document>
+</kml>"""
+        assert _parse_kml(kml) == []

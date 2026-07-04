@@ -6,95 +6,77 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from custom_components.nexus_metro.api import NexusMetroApiClient
-from custom_components.nexus_metro.auth import NexusMetroTokenManager
+from custom_components.nexus_metro.api import KmlClient, TravelineClient
 from custom_components.nexus_metro.const import CONF_PLATFORMS, CONF_STATION_CODE, CONF_STATION_NAME, DOMAIN
-from custom_components.nexus_metro.models import MetroLine, PlatformDirection, PlatformInfo, TrainDeparture, TrainEvent
+from custom_components.nexus_metro.models import CombinedDeparture, LiveTrain, TrainEvent, TravelineDeparture
 from homeassistant.core import HomeAssistant
 
-SAMPLE_STATIONS: dict[str, str] = {
-    "JES": "Jesmond",
-    "HAY": "Haymarket",
-    "MTS": "Monument N-S",
-    "CEN": "Central",
-    "SGF": "South Gosforth",
-}
-
-SAMPLE_PLATFORMS_RAW: dict[str, list[dict]] = {
-    "JES": [
-        {"platformNumber": 1, "direction": "IN", "helperText": "To South Hylton and South Shields"},
-        {"platformNumber": 2, "direction": "OUT", "helperText": "To Airport and St. James via Whitley Bay"},
-    ],
-    "SGF": [
-        {"platformNumber": 1, "direction": "IN", "helperText": "To South Hylton and South Shields"},
-        {"platformNumber": 2, "direction": "OUT", "helperText": "To Airport and St. James via Whitley Bay"},
-    ],
-}
-
-SAMPLE_DEPARTURES_RAW: list[dict] = [
-    {
-        "trn": "102",
-        "lastEvent": "DEPARTED",
-        "lastEventLocation": "Regent Centre Platform 1",
-        "lastEventTime": "2024-01-15T15:03:12",
-        "destination": "South Hylton",
-        "dueIn": 3,
-        "line": "GREEN",
-        "actualScheduledTime": "2024-01-15T15:05:00",
-        "actualPredictedTime": "2024-01-15T15:06:30",
-    },
-    {
-        "trn": "124",
-        "lastEvent": "APPROACHING",
-        "lastEventLocation": "Palmersville Platform 1",
-        "lastEventTime": "2024-01-15T15:03:43",
-        "destination": "South Shields",
-        "dueIn": 8,
-        "line": "YELLOW",
-        "actualScheduledTime": "2024-01-15T15:10:00",
-        "actualPredictedTime": "2024-01-15T15:11:00",
-    },
-]
-
-SAMPLE_DEPARTURES_PARSED: list[TrainDeparture] = [
-    TrainDeparture(
-        train_number="102",
+SAMPLE_TRAVELINE_DEPARTURES: list[TravelineDeparture] = [
+    TravelineDeparture(
+        service="G",
         destination="South Hylton",
-        due_in=3,
-        line=MetroLine.GREEN,
-        last_event=TrainEvent.DEPARTED,
-        last_event_location="Regent Centre Platform 1",
-        last_event_time="2024-01-15T15:03:12",
-        scheduled_time="2024-01-15T15:05:00",
-        predicted_time="2024-01-15T15:06:30",
-        departure_dt=None,
+        due="3 mins",
+        scheduled_mins=3.0,
     ),
-    TrainDeparture(
-        train_number="124",
+    TravelineDeparture(
+        service="Y",
         destination="South Shields",
-        due_in=8,
-        line=MetroLine.YELLOW,
-        last_event=TrainEvent.APPROACHING,
-        last_event_location="Palmersville Platform 1",
-        last_event_time="2024-01-15T15:03:43",
-        scheduled_time="2024-01-15T15:10:00",
-        predicted_time="2024-01-15T15:11:00",
-        departure_dt=None,
+        due="8 mins",
+        scheduled_mins=8.0,
+    ),
+    TravelineDeparture(
+        service="G",
+        destination="South Hylton",
+        due="14 mins",
+        scheduled_mins=14.0,
     ),
 ]
 
-SAMPLE_PLATFORMS_PARSED: dict[int, PlatformInfo] = {
-    1: PlatformInfo(
-        platform_number=1,
-        direction=PlatformDirection.IN,
-        helper_text="To South Hylton and South Shields",
+SAMPLE_LIVE_TRAINS: list[LiveTrain] = [
+    LiveTrain(
+        train_id="102",
+        lat=54.98,
+        lon=-1.62,
+        event=TrainEvent.DEPARTED,
+        event_station_code="RGC",
+        event_platform=1,
+        event_time_mins=15 * 60 + 3,  # 15:03
+        destination="South Hylton",
     ),
-    2: PlatformInfo(
-        platform_number=2,
-        direction=PlatformDirection.OUT,
-        helper_text="To Airport and St. James via Whitley Bay",
+    LiveTrain(
+        train_id="124",
+        lat=55.01,
+        lon=-1.55,
+        event=TrainEvent.APPROACHING,
+        event_station_code="PMV",
+        event_platform=1,
+        event_time_mins=15 * 60 + 3,  # 15:03
+        destination="South Shields",
     ),
-}
+]
+
+SAMPLE_COMBINED_DEPARTURES: list[CombinedDeparture] = [
+    CombinedDeparture(
+        service="G",
+        destination="South Hylton",
+        scheduled_due="3 mins",
+        scheduled_mins=3.0,
+        live_estimate_mins=3.5,
+        status="On time",
+        train_id="102",
+        train_info="Departed RGC",
+    ),
+    CombinedDeparture(
+        service="Y",
+        destination="South Shields",
+        scheduled_due="8 mins",
+        scheduled_mins=8.0,
+        live_estimate_mins=None,
+        status="Scheduled",
+        train_id="",
+        train_info="",
+    ),
+]
 
 
 @pytest.fixture(autouse=True)
@@ -103,33 +85,18 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
 
 
 @pytest.fixture
-def mock_token_manager() -> AsyncMock:
-    """Create a mock token manager."""
-    manager = AsyncMock(spec=NexusMetroTokenManager)
-    manager.async_get_token.return_value = "mock-jwt-token"
-    return manager
+def mock_traveline_client() -> AsyncMock:
+    """Create a mock Traveline client."""
+    client = AsyncMock(spec=TravelineClient)
+    client.async_get_departures.return_value = SAMPLE_TRAVELINE_DEPARTURES
+    return client
 
 
 @pytest.fixture
-def mock_session() -> AsyncMock:
-    """Create a mock aiohttp session."""
-    return AsyncMock(spec=["get"])
-
-
-@pytest.fixture
-def api_client(mock_session: AsyncMock) -> NexusMetroApiClient:
-    """Create a NexusMetroApiClient with a mocked session."""
-    return NexusMetroApiClient(session=mock_session)
-
-
-@pytest.fixture
-def mock_api_client() -> AsyncMock:
-    """Create a fully mocked API client for higher-level tests."""
-    client = AsyncMock(spec=NexusMetroApiClient)
-    client.async_get_stations.return_value = SAMPLE_STATIONS
-    client.async_get_departures.return_value = SAMPLE_DEPARTURES_PARSED
-    client.async_get_platforms.return_value = SAMPLE_PLATFORMS_PARSED
-    client.async_test_connection.return_value = True
+def mock_kml_client() -> AsyncMock:
+    """Create a mock KML client."""
+    client = AsyncMock(spec=KmlClient)
+    client.async_get_trains.return_value = SAMPLE_LIVE_TRAINS
     return client
 
 
@@ -147,28 +114,27 @@ def mock_config_entry(hass: HomeAssistant):
             CONF_PLATFORMS: [1, 2],
         },
         unique_id="JES",
+        version=2,
     )
     entry.add_to_hass(hass)
     return entry
 
 
 @pytest.fixture
-def mock_nexus_api():
-    """Patch the NexusMetroApiClient for integration-level tests."""
+def mock_nexus_clients():
+    """Patch Traveline and KML clients for integration-level tests."""
     with (
-        patch("custom_components.nexus_metro.config_flow.NexusMetroApiClient") as mock_flow,
-        patch("custom_components.nexus_metro.NexusMetroApiClient") as mock_init,
-        patch("custom_components.nexus_metro.config_flow.NexusMetroTokenManager"),
-        patch("custom_components.nexus_metro.NexusMetroTokenManager"),
+        patch("custom_components.nexus_metro.TravelineClient") as mock_trav_cls,
+        patch("custom_components.nexus_metro.KmlClient") as mock_kml_cls,
         patch("custom_components.nexus_metro.async_get_clientsession"),
     ):
-        client = AsyncMock(spec=NexusMetroApiClient)
-        client.async_get_stations.return_value = SAMPLE_STATIONS
-        client.async_get_platforms.return_value = SAMPLE_PLATFORMS_PARSED
-        client.async_get_departures.return_value = SAMPLE_DEPARTURES_PARSED
-        client.async_test_connection.return_value = True
+        trav_client = AsyncMock(spec=TravelineClient)
+        trav_client.async_get_departures.return_value = SAMPLE_TRAVELINE_DEPARTURES
 
-        mock_flow.return_value = client
-        mock_init.return_value = client
+        kml_client = AsyncMock(spec=KmlClient)
+        kml_client.async_get_trains.return_value = SAMPLE_LIVE_TRAINS
 
-        yield client
+        mock_trav_cls.return_value = trav_client
+        mock_kml_cls.return_value = kml_client
+
+        yield trav_client, kml_client

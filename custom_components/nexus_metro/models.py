@@ -1,65 +1,73 @@
-"""Data models for the Nexus Metro RTI API."""
+"""Data models for the Nexus Metro integration."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
 from enum import StrEnum
-
-
-class MetroLine(StrEnum):
-    """Metro line colour."""
-
-    GREEN = "GREEN"
-    YELLOW = "YELLOW"
 
 
 class TrainEvent(StrEnum):
     """Last known event for a train."""
 
-    ARRIVED = "ARRIVED"
-    DEPARTED = "DEPARTED"
-    APPROACHING = "APPROACHING"
-    READY_TO_START = "READY_TO_START"
-
-
-class PlatformDirection(StrEnum):
-    """Platform travel direction."""
-
-    IN = "IN"
-    OUT = "OUT"
+    ARRIVED = "Arrived"
+    DEPARTED = "Departed"
+    APPROACHING = "Approaching"
+    READY = "READY"
 
 
 @dataclass(frozen=True, kw_only=True)
-class TrainDeparture:
-    """A single upcoming train departure at a platform."""
+class TravelineDeparture:
+    """A scheduled departure from Traveline."""
 
-    train_number: str
+    service: str
     destination: str
-    due_in: int
-    line: MetroLine | None
-    last_event: TrainEvent
-    last_event_location: str
-    last_event_time: str
-    scheduled_time: str | None
-    predicted_time: str | None
-    departure_dt: datetime | None
+    due: str
+    scheduled_mins: float | None  # None if due is an absolute time like "22:41"
 
 
 @dataclass(frozen=True, kw_only=True)
-class PlatformInfo:
-    """Metadata for a station platform."""
+class LiveTrain:
+    """A live train position from the KML feed."""
+
+    train_id: str
+    lat: float
+    lon: float
+    event: TrainEvent
+    event_station_code: str
+    event_platform: int
+    event_time_mins: float  # minutes since midnight
+    destination: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class CombinedDeparture:
+    """A Traveline departure enriched with live train data."""
+
+    service: str
+    destination: str
+    scheduled_due: str
+    scheduled_mins: float | None
+    live_estimate_mins: float | None
+    status: str  # "On time", "Delayed (~Xm)", "Early (~Xm)", "Scheduled"
+    train_id: str
+    train_info: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlatformData:
+    """Combined departure data for a single platform."""
 
     platform_number: int
-    direction: PlatformDirection
-    helper_text: str
+    traveline_departures: list[TravelineDeparture] = field(default_factory=list)
+    live_trains: list[LiveTrain] = field(default_factory=list)
+    combined_departures: list[CombinedDeparture] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)
 class StationData:
-    """Complete data for a station: metadata and departures per platform."""
+    """Complete data for a station across all monitored platforms."""
 
     station_code: str
     station_name: str
-    platforms: dict[int, PlatformInfo]
-    departures: dict[int, list[TrainDeparture]]
+    platforms: dict[int, PlatformData]
+    all_live_trains: list[LiveTrain] = field(default_factory=list)

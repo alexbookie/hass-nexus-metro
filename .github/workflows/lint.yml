@@ -11,11 +11,6 @@ on:
 permissions:
   contents: read
 
-# IMPORTANT: Keep HA_VERSION synchronized across all workflow files:
-# - copilot-setup-steps.yml
-# - lint.yml
-# - validate.yml (if added in the future)
-
 jobs:
   ruff:
     name: "Ruff"
@@ -24,37 +19,16 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.13"
-
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: "0.9.3"
-          enable-cache: true
-          cache-dependency-glob: "**/requirements*.txt"
 
-      - name: Get Home Assistant version
-        id: ha_version
-        run: |
-          HA_VERSION=$(grep '"homeassistant"' hacs.json | head -1 | sed 's/.*"homeassistant"\s*:\s*"\([^"]*\)".*/\1/')
-          echo "HA_VERSION=${HA_VERSION}" >> $GITHUB_OUTPUT
-          echo "Home Assistant version: ${HA_VERSION}"
+      # Ruff needs no Home Assistant environment; installing the full HA test
+      # requirements here repeatedly broke CI when HA's pinned test deps
+      # (e.g. mypy-dev pre-releases) disappeared from the package index.
+      - name: Check code format
+        run: uvx ruff@0.13.0 format . --check
 
-      - name: Cache Home Assistant installation
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: |
-            .local/ha-venv
-          key: ha-venv-${{ runner.os }}-py313-ha${{ steps.ha_version.outputs.HA_VERSION }}-${{ hashFiles('**/requirements*.txt') }}
-          restore-keys: |
-            ha-venv-${{ runner.os }}-py313-ha${{ steps.ha_version.outputs.HA_VERSION }}-
-            ha-venv-${{ runner.os }}-py313-
-
-      - name: Install requirements
-        run: script/setup/bootstrap
-
-      - name: Lint check
-        run: script/lint-check
+      - name: Check code with Ruff
+        run: uvx ruff@0.13.0 check .
