@@ -52,7 +52,7 @@ and (for combined) status, train ID, live estimate, scheduled due.
 - [x] DataUpdateCoordinator (combined fetch)
 - [x] Three sensor types per platform (scheduled, live, combined)
 - [x] ATCO codes for all 60 stations
-- [ ] Tests (rewrite needed for new architecture)
+- [x] Tests (54 passing, 91% coverage)
 - [ ] Diagnostics support
 
 ## Quick Reference

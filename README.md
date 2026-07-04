@@ -13,12 +13,15 @@ Real-time Tyne and Wear Metro departure information for Home Assistant.
 
 ## Features
 
-- **Real-time departures**: See the next trains arriving at any Metro station
+- **Live departure status**: Combines Traveline scheduled times with live train
+  positions from the Nexus KML feed for On time / Delayed / Early / Scheduled status
 - **Per-platform sensors**: Monitor specific platforms or the entire station
 - **Multiple departure slots**: Track the next 3 upcoming trains per platform
-- **Line and destination info**: See which line (Green/Yellow) and destination for each train
+- **Live ETA estimation**: Timetable-derived inter-station travel times refine
+  arrival estimates for matched trains
 - **Countdown timers**: Minutes-until-arrival updated every 30 seconds between API polls
-- **Configurable polling**: Adjust the update interval (60-300 seconds, default 90)
+- **Configurable polling**: Adjust the update interval (30-300 seconds, default 60)
+- **No authentication**: Both data sources are open — no API keys or tokens
 
 ## Entities
 
@@ -26,13 +29,14 @@ For each monitored platform, the integration creates:
 
 Entity | Description
 -- | --
-`Platform N next departure` | Minutes until the next train (state = minutes, -1 = arrived)
-`Platform N 2nd departure` | Minutes until the 2nd train
-`Platform N 3rd departure` | Minutes until the 3rd train
-`Platform N destination` | Destination of the next train
-`Platform N line` | Line colour of the next train (GREEN or YELLOW)
+`Platform N next departure` | Minutes until the next train, live estimate preferred over scheduled
+`Platform N departure 2` / `departure 3` | Minutes until the 2nd and 3rd trains
+`Platform N scheduled` | Raw Traveline scheduled departure (minutes)
+`Platform N live estimate` | KML-derived live arrival estimate (minutes)
 
-Each departure sensor includes extra attributes: destination, line, train number, last event, scheduled/predicted times, and a `next_trains` list (on the first slot).
+Departure sensors include extra attributes: destination, status (On time / Delayed /
+Early / Scheduled), scheduled due time, live estimate, matched train ID, and a
+`departures` list with the next 4 trains (on the primary sensor).
 
 ## Installation
 
@@ -62,17 +66,28 @@ Each departure sensor includes extra attributes: destination, line, train number
 
 After setup, click **Configure** on the integration to adjust:
 
-- **Update interval** — how often to fetch departure data (60-300 seconds)
+- **Update interval** — how often to fetch departure data (30-300 seconds)
+
+## Data Sources
+
+- **Scheduled departures**: [Traveline](https://www.traveline.info/) stop pages
+  (per-platform ATCO codes)
+- **Live train positions**: the open Nexus KML feed that powers the official
+  live Metro map
+
+Both sources are unofficial and unauthenticated; the integration polls them
+politely (default 60 s) and degrades to scheduled-only data if the live feed
+is unavailable.
 
 ## Troubleshooting
 
 ### No data / "Unknown" state
 
-The Metro API returns empty data overnight when there is no service running. This is normal behaviour.
+Traveline returns empty data outside Metro operating hours (roughly 05:30-23:30). This is normal behaviour.
 
 ### Connection errors
 
-The integration uses an unofficial API that backs the Nexus Pop mobile app. If the API changes or goes down, the integration will show unavailable. Check the [issue tracker](https://github.com/alexbookie/hass-nexus-metro/issues) for known issues.
+The integration relies on unofficial data sources. If they change or go down, sensors may show unavailable. Check the [issue tracker](https://github.com/alexbookie/hass-nexus-metro/issues) for known issues.
 
 ### Debug logging
 
