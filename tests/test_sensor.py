@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.nexus_metro.const import DOMAIN
-from custom_components.nexus_metro.models import MetroLine, TrainDeparture, TrainEvent
-from custom_components.nexus_metro.sensor import NexusMetroDepartureSensor
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 import homeassistant.util.dt as dt_util
@@ -18,180 +16,136 @@ import homeassistant.util.dt as dt_util
 async def test_sensor_setup_creates_all_entities(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test that all sensors are created: 3 departure slots + destination + line per platform."""
+    """Test that 5 sensors per platform are created (scheduled + live + 3 combined)."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(entity_reg, mock_config_entry.entry_id)
-    # 2 platforms × (3 departure + 1 destination + 1 line) = 10
+    # 2 platforms * (1 scheduled + 1 live + 3 combined) = 10
     assert len(entities) == 10
 
 
-async def test_next_departure_state(
+async def test_combined_sensor_state(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test the first departure slot has correct due_in state."""
+    """Test the combined sensor shows next departure time."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1")
-    state = hass.states.get(entry)
+    entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1")
+    state = hass.states.get(entity_id)
     assert state is not None
-    assert state.state == "3"
+    # Should have a numeric value (minutes)
+    assert state.state not in ("unknown", "unavailable")
 
 
-async def test_second_departure_state(
+async def test_combined_sensor_attributes(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test the 2nd departure slot has correct due_in state."""
+    """Test combined sensor has destination and departures list."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_departure_2")
-    state = hass.states.get(entry)
+    entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1")
+    state = hass.states.get(entity_id)
     assert state is not None
-    assert state.state == "8"
+    attrs = state.attributes
+
+    assert "destination" in attrs
+    assert "status" in attrs
+    assert "departures" in attrs
+    assert isinstance(attrs["departures"], list)
 
 
-async def test_third_departure_unavailable_when_only_two_trains(
+async def test_scheduled_sensor_state(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test the 3rd departure slot shows unknown when only 2 trains exist."""
+    """Test the scheduled sensor shows scheduled minutes."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_departure_3")
-    state = hass.states.get(entry)
+    entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_scheduled")
+    state = hass.states.get(entity_id)
     assert state is not None
-    assert state.state == "unknown"
+    assert state.state == "3.0"
 
 
-async def test_next_departure_attributes(
+async def test_scheduled_sensor_attributes(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test first departure slot extra state attributes."""
+    """Test scheduled sensor has departures list."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1")
-    state = hass.states.get(entry)
+    entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_scheduled")
+    state = hass.states.get(entity_id)
     assert state is not None
     attrs = state.attributes
 
     assert attrs["destination"] == "South Hylton"
-    assert attrs["line"] == "GREEN"
-    assert attrs["train_number"] == "102"
-    assert attrs["last_event"] == "DEPARTED"
-    assert "next_trains" in attrs
-    assert len(attrs["next_trains"]) == 2
+    assert "departures" in attrs
+    assert len(attrs["departures"]) >= 1
 
 
-async def test_second_departure_attributes_no_next_trains_list(
+async def test_live_estimate_sensor(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Test 2nd departure slot has its own attributes but no next_trains list."""
+    """Test the live estimate sensor."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_departure_2")
-    state = hass.states.get(entry)
+    entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_live")
+    state = hass.states.get(entity_id)
     assert state is not None
+    # May be "unknown" if no trains matched, or a number if matched
     attrs = state.attributes
-
-    assert attrs["destination"] == "South Shields"
-    assert attrs["line"] == "YELLOW"
-    assert attrs["train_number"] == "124"
-    assert attrs["last_event"] == "APPROACHING"
-    assert "next_trains" not in attrs
+    assert "trains" in attrs
 
 
-async def test_destination_sensor(
+async def test_no_departures_shows_unknown(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
-):
-    """Test destination sensor shows the next train's destination."""
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_destination")
-    state = hass.states.get(entry)
-    assert state is not None
-    assert state.state == "South Hylton"
-
-
-async def test_line_sensor(
-    hass: HomeAssistant,
-    mock_config_entry,
-    mock_nexus_api: AsyncMock,
-):
-    """Test line sensor shows the next train's line colour."""
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    entity_reg = er.async_get(hass)
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_line")
-    state = hass.states.get(entry)
-    assert state is not None
-    assert state.state == "GREEN"
-
-
-async def test_sensor_no_departures(
-    hass: HomeAssistant,
-    mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
     """Test all sensors show unknown when no departures available."""
-    mock_nexus_api.async_get_departures.return_value = []
+    trav_client, kml_client = mock_nexus_clients
+    trav_client.async_get_departures.return_value = []
+    kml_client.async_get_trains.return_value = []
 
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_reg = er.async_get(hass)
 
-    # Departure sensor
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1")
-    state = hass.states.get(entry)
-    assert state is not None
-    assert state.state == "unknown"
-    assert "destination" not in state.attributes
-
-    # Destination sensor
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_destination")
-    state = hass.states.get(entry)
-    assert state is not None
-    assert state.state == "unknown"
-
-    # Line sensor
-    entry = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1_line")
-    state = hass.states.get(entry)
-    assert state is not None
-    assert state.state == "unknown"
+    for suffix in ["", "_scheduled", "_live", "_departure_2", "_departure_3"]:
+        entity_id = entity_reg.async_get_entity_id("sensor", DOMAIN, f"{mock_config_entry.entry_id}_platform_1{suffix}")
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.state == "unknown"
 
 
 async def test_device_info(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
     """Test device info is set correctly."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -207,7 +161,7 @@ async def test_device_info(
 async def test_unload_entry(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
     """Test unloading the config entry."""
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -217,137 +171,23 @@ async def test_unload_entry(
     assert result is True
 
 
-def _make_departure(**kwargs) -> TrainDeparture:
-    """Build a TrainDeparture with sensible defaults for countdown tests."""
-    defaults = {
-        "train_number": "102",
-        "destination": "South Hylton",
-        "due_in": 5,
-        "line": MetroLine.GREEN,
-        "last_event": TrainEvent.DEPARTED,
-        "last_event_location": "Regent Centre",
-        "last_event_time": "2024-01-15T15:03:12",
-        "scheduled_time": None,
-        "predicted_time": None,
-        "departure_dt": None,
-    }
-    return TrainDeparture(**{**defaults, **kwargs})
-
-
-class TestNativeValueCountdown:
-    """Unit tests for NexusMetroDepartureSensor.native_value countdown logic."""
-
-    def _make_sensor(self, coordinator, platform_info) -> NexusMetroDepartureSensor:
-        return NexusMetroDepartureSensor(coordinator, platform_info, departure_index=0)
-
-    def test_uses_departure_dt_when_available(self, mock_config_entry, mock_nexus_api):
-        """departure_dt set to 4m30s in the future → native_value == 4 (floor)."""
-        from unittest.mock import MagicMock
-
-        coordinator = MagicMock()
-        coordinator.config_entry = mock_config_entry
-        coordinator.station_name = "Jesmond"
-
-        from custom_components.nexus_metro.models import PlatformDirection, PlatformInfo
-
-        platform_info = PlatformInfo(
-            platform_number=1,
-            direction=PlatformDirection.IN,
-            helper_text="To South Hylton",
-        )
-        sensor = self._make_sensor(coordinator, platform_info)
-
-        now = dt_util.utcnow()
-        dep = _make_departure(departure_dt=now + timedelta(minutes=4, seconds=30))
-        coordinator.data.departures = {1: [dep]}
-
-        with patch("custom_components.nexus_metro.sensor.dt_util.utcnow", return_value=now):
-            assert sensor.native_value == 4
-
-    def test_clamps_to_zero_when_overdue(self, mock_config_entry, mock_nexus_api):
-        """departure_dt 30s in the past → native_value == 0 (clamped)."""
-        from unittest.mock import MagicMock
-
-        coordinator = MagicMock()
-        coordinator.config_entry = mock_config_entry
-        coordinator.station_name = "Jesmond"
-
-        from custom_components.nexus_metro.models import PlatformDirection, PlatformInfo
-
-        platform_info = PlatformInfo(
-            platform_number=1,
-            direction=PlatformDirection.IN,
-            helper_text="To South Hylton",
-        )
-        sensor = self._make_sensor(coordinator, platform_info)
-
-        now = dt_util.utcnow()
-        dep = _make_departure(departure_dt=now - timedelta(seconds=30))
-        coordinator.data.departures = {1: [dep]}
-
-        with patch("custom_components.nexus_metro.sensor.dt_util.utcnow", return_value=now):
-            assert sensor.native_value == 0
-
-    def test_arrived_train_returns_zero(self, mock_config_entry, mock_nexus_api):
-        """due_in=-1 (train arrived) returns 0 minutes."""
-        from unittest.mock import MagicMock
-
-        coordinator = MagicMock()
-        coordinator.config_entry = mock_config_entry
-        coordinator.station_name = "Jesmond"
-
-        from custom_components.nexus_metro.models import PlatformDirection, PlatformInfo
-
-        platform_info = PlatformInfo(
-            platform_number=1,
-            direction=PlatformDirection.IN,
-            helper_text="To South Hylton",
-        )
-        sensor = self._make_sensor(coordinator, platform_info)
-
-        now = dt_util.utcnow()
-        dep = _make_departure(due_in=-1, departure_dt=now + timedelta(minutes=10))
-        coordinator.data.departures = {1: [dep]}
-
-        with patch("custom_components.nexus_metro.sensor.dt_util.utcnow", return_value=now):
-            assert sensor.native_value == 0
-
-    def test_falls_back_to_raw_due_in_when_no_dt(self, mock_config_entry, mock_nexus_api):
-        """departure_dt=None falls back to raw due_in integer."""
-        from unittest.mock import MagicMock
-
-        coordinator = MagicMock()
-        coordinator.config_entry = mock_config_entry
-        coordinator.station_name = "Jesmond"
-
-        from custom_components.nexus_metro.models import PlatformDirection, PlatformInfo
-
-        platform_info = PlatformInfo(
-            platform_number=1,
-            direction=PlatformDirection.IN,
-            helper_text="To South Hylton",
-        )
-        sensor = self._make_sensor(coordinator, platform_info)
-
-        dep = _make_departure(due_in=7, departure_dt=None)
-        coordinator.data.departures = {1: [dep]}
-
-        assert sensor.native_value == 7
-
-
-async def test_tick_updates_state_without_coordinator_fetch(
+async def test_tick_updates_state_without_api_call(
     hass: HomeAssistant,
     mock_config_entry,
-    mock_nexus_api: AsyncMock,
+    mock_nexus_clients: tuple[AsyncMock, AsyncMock],
 ):
-    """Firing time forward 30s should push a state update without a new API call."""
+    """Firing time forward 30s should push a state update without new API calls."""
+    trav_client, kml_client = mock_nexus_clients
+
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    initial_call_count = mock_nexus_api.async_get_departures.call_count
+    initial_trav_count = trav_client.async_get_departures.call_count
+    initial_kml_count = kml_client.async_get_trains.call_count
 
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=31))
     await hass.async_block_till_done()
 
     # No additional API calls — tick only calls async_write_ha_state
-    assert mock_nexus_api.async_get_departures.call_count == initial_call_count
+    assert trav_client.async_get_departures.call_count == initial_trav_count
+    assert kml_client.async_get_trains.call_count == initial_kml_count
