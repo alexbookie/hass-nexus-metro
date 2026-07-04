@@ -129,10 +129,12 @@ statuses and live ETAs matched to train running numbers.
 
 ## Next steps
 
-1. Commit the v0.2.0 rewrite on `dev` (it is currently uncommitted working-tree state),
-   finish the test rewrite in the devcontainer, and apply hardening items 1–3.
-2. Note the branch divergence: `dev` carries the v0.1.0 release commits while `main`
-   carries unmerged dependabot merges — reconcile before the next release.
-3. Deploy to staging, verify, then release v0.2.0 → production via HACS.
-4. Optionally register for TNDS now (lead time ~2 working days) so the timetable
-   migration path is available later.
+1. ~~Commit the v0.2.0 rewrite on `dev`~~ Done 2026-07-04. Tests pass (57, 91% cov).
+2. ~~Reconcile the dev/main branch divergence~~ Done — main already had the release
+   commits via PR #6; dependabot updates merged back into dev.
+3. ~~Deploy to staging, verify, then release v0.2.0~~ Done — v0.2.0 ships the rewrite
+   only. **Decision:** hardening items 1–3 (fail-soft Traveline, disruption feeds,
+   parse-collapse detection) are deferred to the next minor release rather than
+   blocking the fix for the production outage.
+4. Register for TNDS (lead time ~2 working days) so the timetable migration path is
+   available later.

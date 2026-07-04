@@ -135,7 +135,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 [commits-shield]: https://img.shields.io/github/commit-activity/y/alexbookie/hass-nexus-metro.svg?style=for-the-badge
 [commits]: https://github.com/alexbookie/hass-nexus-metro/commits/main
 [hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
 [license-shield]: https://img.shields.io/github/license/alexbookie/hass-nexus-metro.svg?style=for-the-badge
 [maintenance-shield]: https://img.shields.io/badge/maintainer-%40alexbookie-blue.svg?style=for-the-badge
 [releases-shield]: https://img.shields.io/github/release/alexbookie/hass-nexus-metro.svg?style=for-the-badge
