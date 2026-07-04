@@ -42,7 +42,10 @@ _add(
         ("FEL", "HTH", 1),
         ("HTH", "PLW", 3),
         # Green South Hylton branch: Pelaw -> South Hylton
-        ("PLW", "SBN", 5),
+        ("PLW", "FGT", 3),
+        ("FGT", "BYW", 2),
+        ("BYW", "EBO", 3),
+        ("EBO", "SBN", 3),
         ("SBN", "SMD", 2),
         ("SMD", "MSP", 2),
         ("MSP", "SUN", 3),
@@ -119,6 +122,9 @@ GREEN_AIRPORT_TO_SOUTH_HYLTON: list[str] = [
     "FEL",
     "HTH",
     "PLW",
+    "FGT",
+    "BYW",
+    "EBO",
     "SBN",
     "SMD",
     "MSP",
@@ -237,6 +243,7 @@ INBOUND_DESTINATIONS: frozenset[str] = frozenset(
         "South Hylton",
         "South Shields",
         "Pelaw",
+        "Brockley Whins",
         "Sunderland",
     }
 )
@@ -248,6 +255,11 @@ OUTBOUND_DESTINATIONS: frozenset[str] = frozenset(
         "Monument East",
     }
 )
+
+
+def _route_to(route: list[str], terminus: str) -> list[str]:
+    """Truncate a route at a short-turn terminus station code."""
+    return route[: route.index(terminus) + 1]
 
 
 def route_for_train(destination: str, current_station: str) -> list[str] | None:
@@ -263,13 +275,15 @@ def route_for_train(destination: str, current_station: str) -> list[str] | None:
     if destination == "St James":
         return list(reversed(YELLOW_ST_JAMES_TO_SOUTH_SHIELDS))
     if destination == "Regent Centre":
-        return list(reversed(GREEN_AIRPORT_TO_SOUTH_HYLTON[:7]))
+        return _route_to(list(reversed(GREEN_AIRPORT_TO_SOUTH_HYLTON)), "RGC")
     if destination == "Pelaw":
-        return GREEN_AIRPORT_TO_SOUTH_SHIELDS[:19]
+        return _route_to(GREEN_AIRPORT_TO_SOUTH_SHIELDS, "PLW")
+    if destination == "Brockley Whins":
+        return _route_to(GREEN_AIRPORT_TO_SOUTH_HYLTON, "BYW")
     if destination == "Sunderland":
-        return GREEN_AIRPORT_TO_SOUTH_HYLTON[:27]
+        return _route_to(GREEN_AIRPORT_TO_SOUTH_HYLTON, "SUN")
     if destination == "Monument East":
-        return list(reversed(YELLOW_ST_JAMES_TO_SOUTH_SHIELDS[:6]))
+        return _route_to(list(reversed(YELLOW_ST_JAMES_TO_SOUTH_SHIELDS)), "MTW")
     return None
 
 
