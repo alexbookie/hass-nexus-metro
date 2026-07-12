@@ -46,7 +46,7 @@ _ha.const = _ha_const
 sys.modules.setdefault("homeassistant", _ha)
 sys.modules.setdefault("homeassistant.const", _ha_const)
 
-_REPO = Path(r"C:\Code\ha-integrations\hass-nexus-metro")
+_REPO = Path(__file__).resolve().parents[2]
 _pkg = types.ModuleType("nexus_metro")
 _pkg.__path__ = [str(_REPO / "custom_components" / "nexus_metro")]
 sys.modules.setdefault("nexus_metro", _pkg)
