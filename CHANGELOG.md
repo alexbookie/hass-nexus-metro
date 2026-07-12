@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.0 (2026-07-12)
+
+### Fixed
+
+- Live train matching works again: Traveline destination text is now normalised
+  ("X Metro Station" suffix stripped, "Newcastle Airport" → "Airport") so it
+  matches the KML feed's bare names. Without this, v0.2.0 showed every
+  departure as "Scheduled" with no live status.
+- Sunderland-line route data restored: Fellgate, Brockley Whins, and East
+  Boldon were missing from the green-line route (Pelaw→Seaburn was one 5-minute
+  hop instead of four segments totalling ~11 minutes).
+- Route resolution now slices by terminus code instead of magic indices:
+  "Sunderland" trains previously routed only as far as Pallion, and
+  "Regent Centre" / "Monument East" routes ran in the wrong direction.
+  Brockley Whins short-turn workings are now recognised.
+
+### Changed (prediction calibration, field-tested 2026-07-04)
+
+- Live ETAs now include 0.2 minutes of dwell time per intermediate stop,
+  removing a systematic optimism bias that grew with distance
+  (+1.57 min average before, −0.02 min after, validated across six stations).
+- The "Early (~Xm)" status has been removed. Field testing showed those
+  estimates were model error, not early running — Metro trains hold to
+  schedule. Live estimates more than 2 minutes ahead of the timetable now
+  fall back to the scheduled time and report "On time"; the matched train ID
+  remains visible in attributes.
+- Displayed prediction accuracy after calibration: MAE 1.24 min overall,
+  ~0.8 min for trains within 10 minutes (out-of-sample, 1,802 predictions).
+  Full report in `docs/research/2026-07-04-prediction-accuracy.md`.
+
+### Build
+
+- Dependency bumps (dependabot): actions/checkout 7.0.0, astral-sh/setup-uv
+  8.2.0, home-assistant/actions pin, devcontainer node feature 2.1.0,
+  pyright 1.1.411.
+
 ## 0.2.0 (2026-07-04)
 
 ### Changed (data source rewrite)

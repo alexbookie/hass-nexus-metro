@@ -14,7 +14,7 @@ Real-time Tyne and Wear Metro departure information for Home Assistant.
 ## Features
 
 - **Live departure status**: Combines Traveline scheduled times with live train
-  positions from the Nexus KML feed for On time / Delayed / Early / Scheduled status
+  positions from the Nexus KML feed for On time / Delayed / Scheduled status
 - **Per-platform sensors**: Monitor specific platforms or the entire station
 - **Multiple departure slots**: Track the next 3 upcoming trains per platform
 - **Live ETA estimation**: Timetable-derived inter-station travel times refine
@@ -35,7 +35,7 @@ Entity | Description
 `Platform N live estimate` | KML-derived live arrival estimate (minutes)
 
 Departure sensors include extra attributes: destination, status (On time / Delayed /
-Early / Scheduled), scheduled due time, live estimate, matched train ID, and a
+Scheduled), scheduled due time, live estimate, matched train ID, and a
 `departures` list with the next 4 trains (on the primary sensor).
 
 ## Installation
