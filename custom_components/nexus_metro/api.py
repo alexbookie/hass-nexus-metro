@@ -22,6 +22,15 @@ _KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 # Regex for Traveline sr-only departure text
 _TRAVELINE_PATTERN = re.compile(r"Service - (\w+)\. Destination - ([^.]+)\. Departure time - ([^.]+)\.")
 
+# Traveline sometimes renders destinations as "South Shields Metro Station";
+# the KML feed always uses the bare name, so strip the suffix for matching.
+_METRO_STATION_SUFFIX = re.compile(r"\s+Metro Station$", re.IGNORECASE)
+
+# Traveline destination names that differ from the KML feed's names.
+_DESTINATION_ALIASES = {
+    "Newcastle Airport": "Airport",
+}
+
 # Regex for KML "last seen" events
 _EVENT_PATTERN = re.compile(r"(Arrived|Departed|Approaching)\s+(.+?)\s+platform\s+(\d+)\s+at\s+(\d+):(\d+)")
 _READY_PATTERN = re.compile(r"Ready to start\s+(.+?)\s+platform\s+(\d+)\s+at\s+(\d+):(\d+)")
@@ -67,7 +76,9 @@ def _parse_traveline_html(html: str) -> list[TravelineDeparture]:
     departures: list[TravelineDeparture] = []
 
     for match in _TRAVELINE_PATTERN.finditer(html):
-        service, destination, due_raw = match.groups()
+        service, destination_raw, due_raw = match.groups()
+        destination = _METRO_STATION_SUFFIX.sub("", destination_raw.strip())
+        destination = _DESTINATION_ALIASES.get(destination, destination)
         due = due_raw.strip()
 
         scheduled_mins: float | None

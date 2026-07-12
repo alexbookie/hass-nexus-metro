@@ -274,6 +274,8 @@ split-on-trailing-comma = false
 "docs/research/*" = [
     "T20",     # print() allowed in research spikes
     "INP001",  # Implicit namespace package (spikes are not a package)
+    "D",       # Docstrings not required in research spikes
+    "PLC0415", # Non-top-level imports fine in research spikes
 ]
 "tests/*" = [
     "S101",    # assert is fine in tests
