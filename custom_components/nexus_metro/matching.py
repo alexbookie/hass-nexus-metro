@@ -8,7 +8,15 @@ from __future__ import annotations
 
 import logging
 
-from .const import MATCH_WINDOW, ON_TIME_THRESHOLD, STATUS_DELAYED, STATUS_EARLY, STATUS_ON_TIME, STATUS_SCHEDULED
+from .const import (
+    DWELL_TIME_MINS,
+    EARLY_DISTRUST_THRESHOLD,
+    MATCH_WINDOW,
+    ON_TIME_THRESHOLD,
+    STATUS_DELAYED,
+    STATUS_ON_TIME,
+    STATUS_SCHEDULED,
+)
 from .metro_data import (
     FALLBACK_SEGMENT_TIME,
     INBOUND_DESTINATIONS,
@@ -61,6 +69,10 @@ def estimate_train_eta(
         return None
 
     remaining = travel_time(route, train_idx, target_idx)
+
+    # Segment times cover track time only; allow for dwell at each
+    # intermediate platform stop.
+    remaining += DWELL_TIME_MINS * max(0, target_idx - train_idx - 1)
 
     # Adjust for progress through the current segment
     if train_idx + 1 < len(route):
@@ -169,8 +181,11 @@ def build_combined_departures(
                 status = STATUS_ON_TIME
             elif diff > ON_TIME_THRESHOLD:
                 status = f"{STATUS_DELAYED} (~{eta:.0f}m)"
-            elif diff < -2:
-                status = f"{STATUS_EARLY} (~{eta:.0f}m)"
+            elif diff < -EARLY_DISTRUST_THRESHOLD:
+                # A live ETA this far ahead of schedule is almost always model
+                # error, not real early running - trust the timetable instead.
+                status = STATUS_ON_TIME
+                eta = None
             else:
                 status = STATUS_ON_TIME
         else:

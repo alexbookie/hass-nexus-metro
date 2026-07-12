@@ -45,6 +45,28 @@ class TestTravelineParsing:
         assert _parse_traveline_html("") == []
         assert _parse_traveline_html("<div>No departures</div>") == []
 
+    def test_parse_strips_metro_station_suffix(self):
+        """Traveline sometimes suffixes destinations; KML uses bare names."""
+        html = (
+            '<span class="sr-only">Service - YEL. Destination - South Shields Metro Station. '
+            "Departure time - 7 mins.</span>"
+            '<span class="sr-only">Service - GRN. Destination - Brockley Whins Metro Station. '
+            "Departure time - 12 mins.</span>"
+        )
+        deps = _parse_traveline_html(html)
+
+        assert [d.destination for d in deps] == ["South Shields", "Brockley Whins"]
+
+    def test_parse_aliases_newcastle_airport(self):
+        """Traveline says 'Newcastle Airport'; the KML feed says 'Airport'."""
+        html = (
+            '<span class="sr-only">Service - GRN. Destination - Newcastle Airport Metro Station. '
+            "Departure time - 4 mins.</span>"
+        )
+        deps = _parse_traveline_html(html)
+
+        assert deps[0].destination == "Airport"
+
 
 class TestKmlParsing:
     SAMPLE_KML = """<?xml version="1.0" encoding="UTF-8"?>
